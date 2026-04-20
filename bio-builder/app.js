@@ -1,3 +1,45 @@
+// ─── PASSWORD GATE ─────────────────────────────────────────────
+const PASSWORD_HASH = '763f90da109f3c87d7db257083b856cfd18b317981e91222cf220a1c3933e1c1';
+
+async function sha256(str) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function submitGate() {
+  const input = document.getElementById('gateInput');
+  const error = document.getElementById('gateError');
+  const hash  = await sha256(input.value);
+
+  if (hash === PASSWORD_HASH) {
+    sessionStorage.setItem('rmp_auth', '1');
+    const gate = document.getElementById('gate');
+    gate.classList.add('gate-out');
+    gate.addEventListener('animationend', () => gate.remove());
+    initApp();
+  } else {
+    input.value = '';
+    error.classList.add('visible');
+    input.classList.add('gate-shake');
+    input.addEventListener('animationend', () => input.classList.remove('gate-shake'), { once: true });
+    input.focus();
+  }
+}
+
+function initGate() {
+  if (sessionStorage.getItem('rmp_auth') === '1') {
+    document.getElementById('gate').remove();
+    initApp();
+    return;
+  }
+  document.getElementById('gateSubmit').addEventListener('click', submitGate);
+  document.getElementById('gateInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') submitGate();
+    document.getElementById('gateError').classList.remove('visible');
+  });
+  document.getElementById('gateInput').focus();
+}
+
 // ─── CONFIGURATION ─────────────────────────────────────────────
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxtWLCPcmi64VwBP7dEHn677SOzbWezr8HI6Ekm4RFXnMzXaBpIttxdMajeYFYwXf97/exec";
 const TABS = ["Film/TV", "Musicians", "Digital", "Athlete", "Culinary"];
@@ -315,4 +357,8 @@ function updateFooterCount() {
 }
 
 // ─── INIT ──────────────────────────────────────────────────────
-fetchRoster();
+function initApp() {
+  fetchRoster();
+}
+
+initGate();
