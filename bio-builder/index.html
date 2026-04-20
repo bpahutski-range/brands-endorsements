@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bio Builder — Brands & Endorsements</title>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="page">
+
+    <!-- HEADER -->
+    <header class="fade-in">
+      <div class="header-eyebrow">Range Media Partners: Brands &amp; Endorsements — Internal Tool</div>
+      <h1>Bio <em>Builder</em></h1>
+      <div class="header-sub">Select talent · name your document · generate</div>
+    </header>
+
+    <!-- DOCUMENT TITLE -->
+    <section class="title-section fade-in">
+      <div class="section-label">Document Title</div>
+      <div class="title-input-wrap">
+        <input
+          type="text"
+          id="docTitle"
+          placeholder="e.g. Nike Partnership — Athlete Bios Q2"
+          autocomplete="off"
+        />
+      </div>
+    </section>
+
+    <!-- ROSTER -->
+    <section class="tabs-section fade-in">
+      <div class="section-label">Select Talent</div>
+
+      <!-- Category Tabs -->
+      <div class="category-tabs" id="categoryTabs">
+        <button class="tab-btn active" data-tab="Film/TV">Film / TV <span class="tab-count" id="count-Film/TV"></span></button>
+        <button class="tab-btn" data-tab="Musicians">Musicians <span class="tab-count" id="count-Musicians"></span></button>
+        <button class="tab-btn" data-tab="Digital">Digital <span class="tab-count" id="count-Digital"></span></button>
+        <button class="tab-btn" data-tab="Athlete">Athlete <span class="tab-count" id="count-Athlete"></span></button>
+        <button class="tab-btn" data-tab="Culinary">Culinary <span class="tab-count" id="count-Culinary"></span></button>
+      </div>
+
+      <!-- Filter -->
+      <div class="filter-wrap">
+        <input type="text" id="rosterFilter" placeholder="Filter by name…" autocomplete="off" />
+      </div>
+
+      <!-- People Panels (one per category) -->
+      <div id="rosterPanels">
+        <div class="roster-loading" id="rosterLoading">
+          <div class="dot-pulse">
+            <span></span><span></span><span></span>
+          </div>
+          Loading roster from Google Sheets...
+        </div>
+      </div>
+    </section>
+
+    <!-- SELECTION TRAY -->
+    <section class="tray-section fade-in">
+      <div class="tray-header">
+        <div class="section-label">Selected <span id="selectionCount" style="margin-left:4px; color: var(--gold);"></span></div>
+        <button id="clearAllBtn">Clear all</button>
+      </div>
+      <div class="tray" id="tray">
+        <span class="tray-empty" id="trayEmpty">No talent selected yet</span>
+      </div>
+    </section>
+
+    <!-- GENERATE -->
+    <section class="generate-section fade-in">
+      <button id="generateBtn" disabled>
+        <span>Generate Document</span>
+      </button>
+      <div class="generate-meta" id="generateMeta">Select talent and enter a title to continue</div>
+    </section>
+
+    <!-- RESULT -->
+    <div id="result">
+      <div class="result-label">Document Ready</div>
+      <div class="result-title" id="resultTitle"></div>
+      <a href="#" id="resultLink" class="result-link" target="_blank">
+        Open in Google Docs →
+      </a>
+    </div>
+
+    <!-- ERROR -->
+    <div id="error"></div>
+
+    <!-- FOOTER -->
+    <footer class="fade-in">
+      <span>Brands &amp; Endorsements</span>
+      <span id="footerCount"></span>
+    </footer>
+
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
