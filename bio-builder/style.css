@@ -1,3 +1,112 @@
+/* ─── PASSWORD GATE ────────────────────────────────────────── */
+#gate {
+  position: fixed;
+  inset: 0;
+  background: var(--cream);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#gate.gate-out {
+  animation: gateFade 0.4s ease-out forwards;
+}
+
+@keyframes gateFade {
+  to { opacity: 0; pointer-events: none; }
+}
+
+.gate-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  max-width: 320px;
+  padding: 0 24px;
+  text-align: center;
+}
+
+.gate-eyebrow {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
+.gate-title {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 28px;
+  font-weight: 300;
+  color: var(--ink);
+  line-height: 1.1;
+}
+
+.gate-sub {
+  font-size: 10px;
+  color: var(--ink-muted);
+  letter-spacing: 0.1em;
+  margin-bottom: 8px;
+}
+
+#gateInput {
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-bottom: 1.5px solid var(--rule);
+  padding: 10px 0;
+  font-family: 'DM Mono', monospace;
+  font-size: 14px;
+  color: var(--ink);
+  outline: none;
+  text-align: center;
+  letter-spacing: 0.2em;
+  transition: border-color 0.2s;
+}
+
+#gateInput:focus { border-bottom-color: var(--gold); }
+
+#gateInput.gate-shake {
+  animation: gateShake 0.35s ease-out;
+}
+
+@keyframes gateShake {
+  0%, 100% { transform: translateX(0); }
+  20%       { transform: translateX(-8px); }
+  40%       { transform: translateX(8px); }
+  60%       { transform: translateX(-5px); }
+  80%       { transform: translateX(5px); }
+}
+
+#gateSubmit {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  padding: 12px 32px;
+  background: var(--gold);
+  color: var(--ink);
+  border: none;
+  cursor: pointer;
+  transition: background 0.2s;
+  width: 100%;
+}
+
+#gateSubmit:hover { background: var(--gold-dim); color: var(--cream); }
+
+.gate-error {
+  font-size: 10px;
+  color: #8B3A3A;
+  letter-spacing: 0.05em;
+  visibility: hidden;
+}
+
+.gate-error.visible { visibility: visible; }
+
 /* ─── RESET & BASE ─────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
