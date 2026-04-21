@@ -259,6 +259,8 @@ function clearAll() {
 clearAllBtn.addEventListener('click', clearAll);
 
 // ─── RENDER TRAY ───────────────────────────────────────────────
+let dragSrcIndex = null;
+
 function renderTray() {
   tray.querySelectorAll('.tray-chip').forEach(c => c.remove());
 
@@ -271,9 +273,39 @@ function renderTray() {
     selectionCount.textContent = `— ${selected.length} selected`;
     clearAllBtn.style.display = 'block';
 
-    selected.forEach(({ name, category }) => {
+    selected.forEach(({ name, category }, index) => {
       const chip = document.createElement('div');
       chip.className = 'tray-chip';
+      chip.draggable = true;
+      chip.dataset.index = index;
+
+      chip.addEventListener('dragstart', e => {
+        dragSrcIndex = index;
+        chip.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+      });
+
+      chip.addEventListener('dragend', () => {
+        chip.classList.remove('dragging');
+        tray.querySelectorAll('.tray-chip').forEach(c => c.classList.remove('drag-over'));
+      });
+
+      chip.addEventListener('dragover', e => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        tray.querySelectorAll('.tray-chip').forEach(c => c.classList.remove('drag-over'));
+        chip.classList.add('drag-over');
+      });
+
+      chip.addEventListener('drop', e => {
+        e.preventDefault();
+        if (dragSrcIndex === null || dragSrcIndex === index) return;
+        const moved = selected.splice(dragSrcIndex, 1)[0];
+        selected.splice(index, 0, moved);
+        dragSrcIndex = null;
+        renderTray();
+      });
+
       const chipLabel = document.createElement('span');
       chipLabel.textContent = name;
       const chipBtn = document.createElement('button');
