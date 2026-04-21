@@ -1,3 +1,22 @@
+/* ─── VARIABLES ─────────────────────────────────────────────── */
+:root {
+  --cream:       #F5F0E8;
+  --ink:         #1A1714;
+  --ink-soft:    #4A4540;
+  --ink-muted:   #8A837A;
+  --gold:        #C9A84C;
+  --gold-light:  #E8D5A0;
+  --gold-dim:    #7A6530;
+  --rule:        #D8CFC4;
+  --card-bg:     #FDFAF5;
+  --selected-bg: #F7F0DC;
+  --tag-film:    #8B6B8B;
+  --tag-music:   #5B7B8B;
+  --tag-digital: #7B8B5B;
+  --tag-athlete: #8B5B5B;
+  --tag-culinary:#7B6B4B;
+}
+
 /* ─── PASSWORD GATE ────────────────────────────────────────── */
 #gate {
   position: fixed;
@@ -109,24 +128,6 @@
 
 /* ─── RESET & BASE ─────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-:root {
-  --cream:       #F5F0E8;
-  --ink:         #1A1714;
-  --ink-soft:    #4A4540;
-  --ink-muted:   #8A837A;
-  --gold:        #C9A84C;
-  --gold-light:  #E8D5A0;
-  --gold-dim:    #7A6530;
-  --rule:        #D8CFC4;
-  --card-bg:     #FDFAF5;
-  --selected-bg: #F7F0DC;
-  --tag-film:    #8B6B8B;
-  --tag-music:   #5B7B8B;
-  --tag-digital: #7B8B5B;
-  --tag-athlete: #8B5B5B;
-  --tag-culinary:#7B6B4B;
-}
 
 html { scroll-behavior: smooth; }
 
