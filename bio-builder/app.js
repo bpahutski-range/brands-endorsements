@@ -342,12 +342,8 @@ generateBtn.addEventListener('click', async () => {
   }, 1000);
 
   try {
-    const res = await fetch(APPS_SCRIPT_URL, {
-      method: 'POST',
-      body: JSON.stringify({ title, selections: selected })
-    });
-
-    const data = await res.json();
+    const payload = encodeURIComponent(JSON.stringify({ title, selections: selected }));
+    const data = await jsonp(`${APPS_SCRIPT_URL}?action=generateDocument&payload=${payload}`);
 
     if (!data.success) throw new Error(data.error || 'Document generation failed.');
 
