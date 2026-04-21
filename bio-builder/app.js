@@ -42,7 +42,7 @@ function initGate() {
 
 // ─── CONFIGURATION ─────────────────────────────────────────────
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxtWLCPcmi64VwBP7dEHn677SOzbWezr8HI6Ekm4RFXnMzXaBpIttxdMajeYFYwXf97/exec";
-const TABS = ["Film/TV", "Musicians", "Digital", "Athlete", "Culinary"];
+const TABS = ["Film/TV", "Musician", "Digital", "Athlete", "Culinary"];
 
 // ─── STATE ─────────────────────────────────────────────────────
 let roster = {};          // { "Film/TV": ["Jane Doe", ...], ... }
@@ -158,14 +158,50 @@ function renderRoster() {
       const grid = document.createElement('div');
       grid.className = 'people-grid';
 
-      people.forEach(name => {
+      people.forEach(({ name, exclusivity, exclusivitySummary }) => {
         const card = document.createElement('div');
         card.className = 'person-card';
         card.dataset.name = name;
         card.dataset.category = tab;
+
         const nameEl = document.createElement('div');
         nameEl.className = 'person-name';
-        nameEl.textContent = name;
+
+        const hasExclusivity = exclusivity || exclusivitySummary;
+        if (hasExclusivity) {
+          nameEl.textContent = name;
+          const asterisk = document.createElement('span');
+          asterisk.className = 'exclusivity-asterisk';
+          asterisk.textContent = '*';
+          nameEl.appendChild(asterisk);
+
+          const tooltip = document.createElement('div');
+          tooltip.className = 'exclusivity-tooltip';
+          if (exclusivitySummary) {
+            const h = document.createElement('div');
+            h.className = 'tooltip-heading';
+            h.textContent = 'Exclusivity Summary';
+            const p = document.createElement('div');
+            p.className = 'tooltip-body';
+            p.textContent = exclusivitySummary;
+            tooltip.appendChild(h);
+            tooltip.appendChild(p);
+          }
+          if (exclusivity) {
+            const h = document.createElement('div');
+            h.className = 'tooltip-heading';
+            h.textContent = 'Exclusivity';
+            const p = document.createElement('div');
+            p.className = 'tooltip-body';
+            p.textContent = exclusivity;
+            tooltip.appendChild(h);
+            tooltip.appendChild(p);
+          }
+          card.appendChild(tooltip);
+        } else {
+          nameEl.textContent = name;
+        }
+
         const catEl = document.createElement('div');
         catEl.className = 'person-category';
         catEl.textContent = tab;
@@ -402,7 +438,7 @@ generateBtn.addEventListener('click', async () => {
 
 // ─── FOOTER COUNT ──────────────────────────────────────────────
 function updateFooterCount() {
-  const total = Object.values(roster).reduce((sum, arr) => sum + arr.length, 0);
+  const total = Object.values(roster).reduce((sum, arr) => sum + arr.length, 0);  // arr is now [{name,...}]
   footerCount.textContent = `${total} talent on roster`;
 }
 
