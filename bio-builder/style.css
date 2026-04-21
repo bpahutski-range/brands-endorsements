@@ -429,7 +429,15 @@ h1 em {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 20px;
+  margin-bottom: 8px;
+}
+
+.tray-hint {
+  font-size: 14px;
+  color: var(--ink-muted);
+  font-style: italic;
+  font-family: 'Cormorant Garamond', serif;
+  margin-bottom: 14px;
 }
 
 .tray-header .section-label {
@@ -447,6 +455,7 @@ h1 em {
   border: none;
   cursor: pointer;
   padding: 0;
+  margin-left: 12px;
   transition: color 0.15s;
   display: none;
 }
