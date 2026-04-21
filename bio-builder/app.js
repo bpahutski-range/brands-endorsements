@@ -269,7 +269,7 @@ function renderTray() {
   } else {
     trayEmpty.style.display = 'none';
     selectionCount.textContent = `— ${selected.length} selected`;
-    clearAllBtn.style.display = '';
+    clearAllBtn.style.display = 'block';
 
     selected.forEach(({ name, category }) => {
       const chip = document.createElement('div');
