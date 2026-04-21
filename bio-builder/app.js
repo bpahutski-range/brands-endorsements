@@ -69,11 +69,33 @@ const resultLink    = document.getElementById('resultLink');
 const errorEl       = document.getElementById('error');
 const footerCount   = document.getElementById('footerCount');
 
+// ─── JSONP HELPER ──────────────────────────────────────────────
+function jsonp(url) {
+  return new Promise((resolve, reject) => {
+    const callbackName = 'cb_' + Math.random().toString(36).slice(2);
+    const script = document.createElement('script');
+    script.src = `${url}&callback=${callbackName}`;
+
+    window[callbackName] = (data) => {
+      resolve(data);
+      delete window[callbackName];
+      script.remove();
+    };
+
+    script.onerror = () => {
+      reject(new Error('Network error — could not reach Apps Script.'));
+      delete window[callbackName];
+      script.remove();
+    };
+
+    document.head.appendChild(script);
+  });
+}
+
 // ─── FETCH ROSTER ──────────────────────────────────────────────
 async function fetchRoster() {
   try {
-    const res = await fetch(`${APPS_SCRIPT_URL}?action=getRoster`);
-    const data = await res.json();
+    const data = await jsonp(`${APPS_SCRIPT_URL}?action=getRoster`);
 
     if (!data.success) throw new Error(data.error || "Failed to load roster.");
 
