@@ -1,18 +1,18 @@
 /* ─── VARIABLES ─────────────────────────────────────────────── */
 :root {
-  --cream:       #F5F0E8;
-  --ink:         #1A1714;
-  --ink-soft:    #4A4540;
-  --ink-muted:   #8A837A;
-  --gold:        #C9A84C;
-  --gold-light:  #E8D5A0;
-  --gold-dim:    #7A6530;
-  --rule:        #D8CFC4;
-  --card-bg:     #FDFAF5;
-  --selected-bg: #F7F0DC;
+  --cream:       #F0F4F0;
+  --ink:         #003e02;
+  --ink-soft:    #1c5220;
+  --ink-muted:   #5e7d60;
+  --gold:        #4a9c4e;
+  --gold-light:  #aacbac;
+  --gold-dim:    #2b6e30;
+  --rule:        #bccfbd;
+  --card-bg:     #F4F9F4;
+  --selected-bg: #E0EEE1;
   --tag-film:    #8B6B8B;
   --tag-music:   #5B7B8B;
-  --tag-digital: #7B8B5B;
+  --tag-digital: #527A56;
   --tag-athlete: #8B5B5B;
   --tag-culinary:#7B6B4B;
 }
@@ -108,7 +108,7 @@
   text-transform: uppercase;
   padding: 12px 32px;
   background: var(--gold);
-  color: var(--ink);
+  color: var(--cream);
   border: none;
   cursor: pointer;
   transition: background 0.2s;
@@ -318,7 +318,7 @@ h1 em {
 .person-card:hover {
   border-color: var(--gold-dim);
   transform: translateY(-1px);
-  box-shadow: 0 4px 16px rgba(26,23,20,0.06);
+  box-shadow: 0 4px 16px rgba(0,62,2,0.08);
 }
 
 .person-card.selected {
@@ -358,7 +358,7 @@ h1 em {
   color: var(--cream);
   padding: 12px 14px;
   z-index: 100;
-  box-shadow: 0 4px 20px rgba(26,23,20,0.2);
+  box-shadow: 0 4px 20px rgba(0,62,2,0.2);
   pointer-events: auto;
 }
 
@@ -627,7 +627,7 @@ h1 em {
   text-transform: uppercase;
   padding: 16px 40px;
   background: var(--gold);
-  color: var(--ink);
+  color: var(--cream);
   border: none;
   cursor: pointer;
   transition: all 0.2s;
