@@ -175,15 +175,15 @@ function generateDocument(docTitle, selections) {
     const brandColor = (typeof BRAND_COLOR !== 'undefined') ? BRAND_COLOR : '#1A1A2E';
 
     // ═════════════════════════════════════════════════════════════════════════
-    // TALENT LIST  —  flat, continuous, category breaks only
+    // TALENT LIST  —  continuous, one person after another, category breaks
     // ═════════════════════════════════════════════════════════════════════════
     let firstCategory = true;
 
     selections.forEach(({ category: tabName, names }) => {
       if (!names || names.length === 0) return;
 
-      // Category break: blank line (skipped before the very first category)
-      // then the category name in bold at the same size as the bios.
+      // One blank line before every category except the first, then the
+      // category name bold at the same font size as everything else.
       if (!firstCategory) {
         const blankLine = body.appendParagraph('');
         blankLine.setSpacingBefore(0).setSpacingAfter(0);
@@ -191,16 +191,34 @@ function generateDocument(docTitle, selections) {
       firstCategory = false;
 
       const catLabel = body.appendParagraph(tabName);
-      catLabel.setSpacingBefore(0).setSpacingAfter(4);
+      catLabel.setSpacingBefore(0).setSpacingAfter(0);
       catLabel.editAsText()
         .setFontFamily('Arial').setFontSize(11).setBold(true).setForegroundColor('#1A1A1A');
 
-      // Names — one after another, no break between them
+      // Each person: bio only, no name, no spacing between entries
       names.forEach(name => {
-        const namePara = body.appendParagraph(name);
-        namePara.setSpacingBefore(0).setSpacingAfter(0);
-        namePara.editAsText()
-          .setFontFamily('Arial').setFontSize(11).setBold(false).setForegroundColor('#333333');
+        const person = dataMap[tabName]?.[name];
+        if (!person || !person.bio) return;
+
+        const bioPara = body.appendParagraph(person.bio);
+        bioPara.setSpacingBefore(0).setSpacingAfter(0);
+        bioPara.editAsText()
+          .setFontFamily('Arial').setFontSize(11).setBold(false)
+          .setForegroundColor('#333333');
+
+        const richText = richTextMap[tabName]?.[name];
+        if (richText) {
+          const textEl = bioPara.editAsText();
+          let pos = 0;
+          for (const run of richText.getRuns()) {
+            const runText = run.getText();
+            const url     = run.getLinkUrl();
+            if (url && runText.length > 0) {
+              try { textEl.setLinkUrl(pos, pos + runText.length - 1, url); } catch (_) {}
+            }
+            pos += runText.length;
+          }
+        }
       });
     });
 
