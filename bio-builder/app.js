@@ -45,10 +45,11 @@ const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxtWLCPcmi64VwB
 const TABS = ["Film/TV", "Musician", "Digital", "Athlete", "Culinary"];
 
 // ─── STATE ─────────────────────────────────────────────────────
-let roster = {};          // { "Film/TV": ["Jane Doe", ...], ... }
-let selected = [];        // [{ name, category }, ...]
+let roster = {};
+let categoryOrder = [];         // categories with selections, in display order
+let selectedByCategory = {};    // { "Film/TV": ["Jane", "Bob"], ... }
 let activeTab = "Film/TV";
-let isGenerating = false; // guard against double-submit
+let isGenerating = false;
 let generateTimer = null;
 let generateSeconds = 0;
 
@@ -96,22 +97,17 @@ function jsonp(url) {
 async function fetchRoster() {
   try {
     const data = await jsonp(`${APPS_SCRIPT_URL}?action=getRoster`);
-
     if (!data.success) throw new Error(data.error || "Failed to load roster.");
-
     roster = data.roster;
     renderRoster();
     updateFooterCount();
   } catch (err) {
     rosterLoading.innerHTML = '';
-
     const wrap = document.createElement('div');
     wrap.className = 'roster-error';
-
     const msg = document.createElement('div');
     msg.className = 'roster-error-msg';
     msg.textContent = `Roster failed to load: ${err.message}`;
-
     const retryBtn = document.createElement('button');
     retryBtn.className = 'roster-retry';
     retryBtn.textContent = 'Try again';
@@ -126,11 +122,9 @@ async function fetchRoster() {
       generateMeta.textContent = 'Select talent and enter a title to continue';
       fetchRoster();
     });
-
     wrap.appendChild(msg);
     wrap.appendChild(retryBtn);
     rosterLoading.appendChild(wrap);
-
     rosterFilter.disabled = true;
     generateMeta.textContent = 'Roster unavailable — generation disabled';
   }
@@ -142,12 +136,9 @@ function renderRoster() {
 
   TABS.forEach((tab, i) => {
     const people = roster[tab] || [];
-
-    // Update tab count badge
     const countEl = document.getElementById(`count-${tab}`);
     if (countEl) countEl.textContent = people.length ? `(${people.length})` : '';
 
-    // Create panel
     const panel = document.createElement('div');
     panel.className = `people-panel${i === 0 ? ' active' : ''}`;
     panel.id = `panel-${tab}`;
@@ -270,13 +261,21 @@ document.getElementById('categoryTabs').addEventListener('click', e => {
 
 // ─── TOGGLE PERSON ─────────────────────────────────────────────
 function togglePerson(name, category, card) {
-  const idx = selected.findIndex(s => s.name === name && s.category === category);
-
-  if (idx > -1) {
-    selected.splice(idx, 1);
+  if (selectedByCategory[category]?.includes(name)) {
+    // Deselect
+    selectedByCategory[category] = selectedByCategory[category].filter(n => n !== name);
+    if (selectedByCategory[category].length === 0) {
+      delete selectedByCategory[category];
+      categoryOrder = categoryOrder.filter(c => c !== category);
+    }
     card.classList.remove('selected');
   } else {
-    selected.push({ name, category });
+    // Select
+    if (!selectedByCategory[category]) {
+      categoryOrder.push(category);
+      selectedByCategory[category] = [];
+    }
+    selectedByCategory[category].push(name);
     card.classList.add('selected');
   }
 
@@ -286,7 +285,8 @@ function togglePerson(name, category, card) {
 
 // ─── CLEAR ALL ─────────────────────────────────────────────────
 function clearAll() {
-  selected = [];
+  categoryOrder = [];
+  selectedByCategory = {};
   document.querySelectorAll('.person-card.selected').forEach(card => card.classList.remove('selected'));
   renderTray();
   updateGenerateBtn();
@@ -295,50 +295,128 @@ function clearAll() {
 clearAllBtn.addEventListener('click', clearAll);
 
 // ─── RENDER TRAY ───────────────────────────────────────────────
-let dragSrcIndex = null;
+let dragBinSrc  = null;   // category string being dragged at bin level
+let dragChipSrc = null;   // { category, index } being dragged at chip level
 
 function renderTray() {
-  tray.querySelectorAll('.tray-chip').forEach(c => c.remove());
+  tray.querySelectorAll('.tray-bin').forEach(b => b.remove());
 
-  if (selected.length === 0) {
+  const totalSelected = Object.values(selectedByCategory).reduce((s, arr) => s + arr.length, 0);
+
+  if (totalSelected === 0) {
     trayEmpty.style.display = '';
     selectionCount.textContent = '';
     clearAllBtn.style.display = 'none';
-  } else {
-    trayEmpty.style.display = 'none';
-    selectionCount.textContent = `— ${selected.length} selected`;
-    clearAllBtn.style.display = 'block';
+    return;
+  }
 
-    selected.forEach(({ name, category }, index) => {
+  trayEmpty.style.display = 'none';
+  selectionCount.textContent = `— ${totalSelected} selected`;
+  clearAllBtn.style.display = 'block';
+
+  categoryOrder.forEach(category => {
+    const names = selectedByCategory[category] || [];
+
+    // ── Bin container ──────────────────────────────────────────
+    const bin = document.createElement('div');
+    bin.className = 'tray-bin';
+    bin.draggable = true;
+    bin.dataset.category = category;
+
+    bin.addEventListener('dragstart', e => {
+      if (dragChipSrc) { e.preventDefault(); return; }
+      dragBinSrc = category;
+      bin.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    bin.addEventListener('dragend', () => {
+      bin.classList.remove('dragging');
+      dragBinSrc = null;
+      tray.querySelectorAll('.tray-bin').forEach(b => b.classList.remove('drag-over'));
+    });
+    bin.addEventListener('dragover', e => {
+      if (!dragBinSrc || dragBinSrc === category || dragChipSrc) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      tray.querySelectorAll('.tray-bin').forEach(b => b.classList.remove('drag-over'));
+      bin.classList.add('drag-over');
+    });
+    bin.addEventListener('drop', e => {
+      e.preventDefault();
+      if (!dragBinSrc || dragBinSrc === category) return;
+      const fromIdx = categoryOrder.indexOf(dragBinSrc);
+      const toIdx   = categoryOrder.indexOf(category);
+      categoryOrder.splice(fromIdx, 1);
+      categoryOrder.splice(toIdx, 0, dragBinSrc);
+      dragBinSrc = null;
+      renderTray();
+    });
+
+    // ── Bin header ─────────────────────────────────────────────
+    const header = document.createElement('div');
+    header.className = 'tray-bin-header';
+
+    const catLabel = document.createElement('span');
+    catLabel.className = 'tray-bin-label';
+    catLabel.textContent = category;
+
+    const removeAllBtn = document.createElement('button');
+    removeAllBtn.className = 'tray-bin-remove';
+    removeAllBtn.title = `Remove all ${category}`;
+    removeAllBtn.textContent = '×';
+    removeAllBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      (selectedByCategory[category] || []).forEach(name => {
+        const card = document.querySelector(`.person-card[data-name="${CSS.escape(name)}"][data-category="${CSS.escape(category)}"]`);
+        if (card) card.classList.remove('selected');
+      });
+      delete selectedByCategory[category];
+      categoryOrder = categoryOrder.filter(c => c !== category);
+      renderTray();
+      updateGenerateBtn();
+    });
+
+    header.appendChild(catLabel);
+    header.appendChild(removeAllBtn);
+    bin.appendChild(header);
+
+    // ── Bin body (chips) ────────────────────────────────────────
+    const binBody = document.createElement('div');
+    binBody.className = 'tray-bin-body';
+
+    names.forEach((name, chipIndex) => {
       const chip = document.createElement('div');
       chip.className = 'tray-chip';
       chip.draggable = true;
-      chip.dataset.index = index;
+      chip.dataset.index = chipIndex;
 
       chip.addEventListener('dragstart', e => {
-        dragSrcIndex = index;
+        e.stopPropagation();
+        dragChipSrc = { category, index: chipIndex };
         chip.classList.add('dragging');
         e.dataTransfer.effectAllowed = 'move';
       });
-
       chip.addEventListener('dragend', () => {
         chip.classList.remove('dragging');
-        tray.querySelectorAll('.tray-chip').forEach(c => c.classList.remove('drag-over'));
+        dragChipSrc = null;
+        binBody.querySelectorAll('.tray-chip').forEach(c => c.classList.remove('drag-over'));
       });
-
       chip.addEventListener('dragover', e => {
         e.preventDefault();
+        e.stopPropagation();
+        if (!dragChipSrc || dragChipSrc.category !== category || dragChipSrc.index === chipIndex) return;
         e.dataTransfer.dropEffect = 'move';
-        tray.querySelectorAll('.tray-chip').forEach(c => c.classList.remove('drag-over'));
+        binBody.querySelectorAll('.tray-chip').forEach(c => c.classList.remove('drag-over'));
         chip.classList.add('drag-over');
       });
-
       chip.addEventListener('drop', e => {
         e.preventDefault();
-        if (dragSrcIndex === null || dragSrcIndex === index) return;
-        const moved = selected.splice(dragSrcIndex, 1)[0];
-        selected.splice(index, 0, moved);
-        dragSrcIndex = null;
+        e.stopPropagation();
+        if (!dragChipSrc || dragChipSrc.category !== category || dragChipSrc.index === chipIndex) return;
+        const arr = selectedByCategory[category];
+        const [moved] = arr.splice(dragChipSrc.index, 1);
+        arr.splice(chipIndex, 0, moved);
+        dragChipSrc = null;
         renderTray();
       });
 
@@ -347,18 +425,28 @@ function renderTray() {
       const chipBtn = document.createElement('button');
       chipBtn.title = 'Remove';
       chipBtn.textContent = '×';
-      chipBtn.addEventListener('click', () => removePerson(name, category));
+      chipBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        removePerson(name, category);
+      });
       chip.appendChild(chipLabel);
       chip.appendChild(chipBtn);
-      tray.appendChild(chip);
+      binBody.appendChild(chip);
     });
-  }
+
+    bin.appendChild(binBody);
+    tray.appendChild(bin);
+  });
 }
 
 // ─── REMOVE PERSON ─────────────────────────────────────────────
 function removePerson(name, category) {
-  const idx = selected.findIndex(s => s.name === name && s.category === category);
-  if (idx > -1) selected.splice(idx, 1);
+  if (!selectedByCategory[category]) return;
+  selectedByCategory[category] = selectedByCategory[category].filter(n => n !== name);
+  if (selectedByCategory[category].length === 0) {
+    delete selectedByCategory[category];
+    categoryOrder = categoryOrder.filter(c => c !== category);
+  }
 
   const card = document.querySelector(`.person-card[data-name="${CSS.escape(name)}"][data-category="${CSS.escape(category)}"]`);
   if (card) card.classList.remove('selected');
@@ -370,7 +458,8 @@ function removePerson(name, category) {
 // ─── UPDATE GENERATE BUTTON ────────────────────────────────────
 function updateGenerateBtn() {
   const hasTitle = docTitleInput.value.trim().length > 0;
-  const hasSelections = selected.length > 0;
+  const totalSelected = Object.values(selectedByCategory).reduce((s, arr) => s + arr.length, 0);
+  const hasSelections = totalSelected > 0;
 
   generateBtn.disabled = !(hasTitle && hasSelections);
 
@@ -381,7 +470,7 @@ function updateGenerateBtn() {
   } else if (!hasSelections) {
     generateMeta.textContent = 'Select at least one person to continue';
   } else {
-    generateMeta.textContent = `Ready — ${selected.length} ${selected.length === 1 ? 'person' : 'people'} selected`;
+    generateMeta.textContent = `Ready — ${totalSelected} ${totalSelected === 1 ? 'person' : 'people'} selected`;
   }
 }
 
@@ -391,11 +480,11 @@ docTitleInput.addEventListener('input', updateGenerateBtn);
 generateBtn.addEventListener('click', async () => {
   if (isGenerating) return;
   const title = docTitleInput.value.trim();
-  if (!title || selected.length === 0) return;
+  const totalSelected = Object.values(selectedByCategory).reduce((s, arr) => s + arr.length, 0);
+  if (!title || totalSelected === 0) return;
 
   isGenerating = true;
 
-  // Reset UI
   resultEl.style.display = 'none';
   errorEl.style.display = 'none';
   generateBtn.disabled = true;
@@ -410,12 +499,15 @@ generateBtn.addEventListener('click', async () => {
   }, 1000);
 
   try {
-    const payload = encodeURIComponent(JSON.stringify({ title, selections: selected }));
+    const orderedSelections = categoryOrder.map(cat => ({
+      category: cat,
+      names: selectedByCategory[cat]
+    }));
+    const payload = encodeURIComponent(JSON.stringify({ title, selections: orderedSelections }));
     const data = await jsonp(`${APPS_SCRIPT_URL}?action=generateDocument&payload=${payload}`);
 
     if (!data.success) throw new Error(data.error || 'Document generation failed.');
 
-    // Show result
     resultTitle.textContent = data.docTitle;
     resultLink.href = data.docUrl;
     resultEl.style.display = 'block';
@@ -438,7 +530,7 @@ generateBtn.addEventListener('click', async () => {
 
 // ─── FOOTER COUNT ──────────────────────────────────────────────
 function updateFooterCount() {
-  const total = Object.values(roster).reduce((sum, arr) => sum + arr.length, 0);  // arr is now [{name,...}]
+  const total = Object.values(roster).reduce((sum, arr) => sum + arr.length, 0);
   footerCount.textContent = `${total} talent on roster`;
 }
 
