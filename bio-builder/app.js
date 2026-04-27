@@ -45,12 +45,14 @@ const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxtWLCPcmi64VwB
 const TABS = ["Film/TV", "Musician", "Digital", "Athlete", "Culinary"];
 
 // ─── STATE ─────────────────────────────────────────────────────
-let roster = {};
-let categoryOrder = [];         // categories with selections, in display order
-let selectedByCategory = {};    // { "Film/TV": ["Jane", "Bob"], ... }
-let activeTab = "Film/TV";
-let isGenerating = false;
-let generateTimer = null;
+let roster        = {};
+let selectedPeople = [];  // [{ name, category }] in selection order
+let featuredNames  = [];  // [{ name, category }] in featured priority order
+// let categoryOrder    = [];     // REMOVED — ordering is now automatic
+// let selectedByCategory = {};   // REMOVED — replaced by selectedPeople flat array
+let activeTab      = "Film/TV";
+let isGenerating   = false;
+let generateTimer  = null;
 let generateSeconds = 0;
 
 // ─── DOM REFS ──────────────────────────────────────────────────
@@ -261,32 +263,25 @@ document.getElementById('categoryTabs').addEventListener('click', e => {
 
 // ─── TOGGLE PERSON ─────────────────────────────────────────────
 function togglePerson(name, category, card) {
-  if (selectedByCategory[category]?.includes(name)) {
-    // Deselect
-    selectedByCategory[category] = selectedByCategory[category].filter(n => n !== name);
-    if (selectedByCategory[category].length === 0) {
-      delete selectedByCategory[category];
-      categoryOrder = categoryOrder.filter(c => c !== category);
-    }
+  const idx = selectedPeople.findIndex(p => p.name === name && p.category === category);
+  if (idx !== -1) {
+    // Deselect — also remove from featured if present
+    selectedPeople.splice(idx, 1);
+    featuredNames = featuredNames.filter(f => !(f.name === name && f.category === category));
     card.classList.remove('selected');
   } else {
     // Select
-    if (!selectedByCategory[category]) {
-      categoryOrder.push(category);
-      selectedByCategory[category] = [];
-    }
-    selectedByCategory[category].push(name);
+    selectedPeople.push({ name, category });
     card.classList.add('selected');
   }
-
   renderTray();
   updateGenerateBtn();
 }
 
 // ─── CLEAR ALL ─────────────────────────────────────────────────
 function clearAll() {
-  categoryOrder = [];
-  selectedByCategory = {};
+  selectedPeople = [];
+  featuredNames  = [];
   document.querySelectorAll('.person-card.selected').forEach(card => card.classList.remove('selected'));
   renderTray();
   updateGenerateBtn();
@@ -295,15 +290,16 @@ function clearAll() {
 clearAllBtn.addEventListener('click', clearAll);
 
 // ─── RENDER TRAY ───────────────────────────────────────────────
-let dragBinSrc  = null;   // category string being dragged at bin level
-let dragChipSrc = null;   // { category, index } being dragged at chip level
+// Drag-and-drop ordering has been removed.
+// Category and gender ordering is now handled automatically by the backend
+// based on the Featured Names selection.
 
 function renderTray() {
-  tray.querySelectorAll('.tray-bin').forEach(b => b.remove());
+  tray.querySelectorAll('.featured-order-section, .selected-list').forEach(el => el.remove());
 
-  const totalSelected = Object.values(selectedByCategory).reduce((s, arr) => s + arr.length, 0);
+  const total = selectedPeople.length;
 
-  if (totalSelected === 0) {
+  if (total === 0) {
     trayEmpty.style.display = '';
     selectionCount.textContent = '';
     clearAllBtn.style.display = 'none';
@@ -311,142 +307,121 @@ function renderTray() {
   }
 
   trayEmpty.style.display = 'none';
-  selectionCount.textContent = `— ${totalSelected} selected`;
+  selectionCount.textContent = `— ${total} selected`;
   clearAllBtn.style.display = 'block';
 
-  categoryOrder.forEach(category => {
-    const names = selectedByCategory[category] || [];
+  // ── Featured Order section ──────────────────────────────────
+  if (featuredNames.length > 0) {
+    const featSection = document.createElement('div');
+    featSection.className = 'featured-order-section';
 
-    // ── Bin container ──────────────────────────────────────────
-    const bin = document.createElement('div');
-    bin.className = 'tray-bin';
-    bin.draggable = true;
-    bin.dataset.category = category;
+    const featLabel = document.createElement('div');
+    featLabel.className = 'featured-order-label';
+    featLabel.textContent = 'Featured Order';
+    featSection.appendChild(featLabel);
 
-    bin.addEventListener('dragstart', e => {
-      if (dragChipSrc) { e.preventDefault(); return; }
-      dragBinSrc = category;
-      bin.classList.add('dragging');
-      e.dataTransfer.effectAllowed = 'move';
+    featuredNames.forEach((feat, i) => {
+      const row = document.createElement('div');
+      row.className = 'featured-order-row';
+
+      const num = document.createElement('span');
+      num.className = 'featured-order-num';
+      num.textContent = `${i + 1}.`;
+
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'featured-order-name';
+      nameSpan.textContent = feat.name;
+
+      const catSpan = document.createElement('span');
+      catSpan.className = 'featured-order-cat';
+      catSpan.textContent = feat.category;
+
+      const btnWrap = document.createElement('div');
+      btnWrap.className = 'featured-order-btns';
+
+      if (i > 0) {
+        const upBtn = document.createElement('button');
+        upBtn.textContent = '↑';
+        upBtn.title = 'Move up';
+        upBtn.addEventListener('click', () => {
+          [featuredNames[i - 1], featuredNames[i]] = [featuredNames[i], featuredNames[i - 1]];
+          renderTray();
+        });
+        btnWrap.appendChild(upBtn);
+      }
+
+      if (i < featuredNames.length - 1) {
+        const downBtn = document.createElement('button');
+        downBtn.textContent = '↓';
+        downBtn.title = 'Move down';
+        downBtn.addEventListener('click', () => {
+          [featuredNames[i], featuredNames[i + 1]] = [featuredNames[i + 1], featuredNames[i]];
+          renderTray();
+        });
+        btnWrap.appendChild(downBtn);
+      }
+
+      row.appendChild(num);
+      row.appendChild(nameSpan);
+      row.appendChild(catSpan);
+      row.appendChild(btnWrap);
+      featSection.appendChild(row);
     });
-    bin.addEventListener('dragend', () => {
-      bin.classList.remove('dragging');
-      dragBinSrc = null;
-      tray.querySelectorAll('.tray-bin').forEach(b => b.classList.remove('drag-over'));
-    });
-    bin.addEventListener('dragover', e => {
-      if (!dragBinSrc || dragBinSrc === category || dragChipSrc) return;
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'move';
-      tray.querySelectorAll('.tray-bin').forEach(b => b.classList.remove('drag-over'));
-      bin.classList.add('drag-over');
-    });
-    bin.addEventListener('drop', e => {
-      e.preventDefault();
-      if (!dragBinSrc || dragBinSrc === category) return;
-      const fromIdx = categoryOrder.indexOf(dragBinSrc);
-      const toIdx   = categoryOrder.indexOf(category);
-      categoryOrder.splice(fromIdx, 1);
-      categoryOrder.splice(toIdx, 0, dragBinSrc);
-      dragBinSrc = null;
+
+    tray.appendChild(featSection);
+  }
+
+  // ── All Selected list ───────────────────────────────────────
+  const list = document.createElement('div');
+  list.className = 'selected-list';
+
+  selectedPeople.forEach(person => {
+    const isFeatured = featuredNames.some(f => f.name === person.name && f.category === person.category);
+
+    const row = document.createElement('div');
+    row.className = 'selected-row' + (isFeatured ? ' is-featured' : '');
+
+    const starBtn = document.createElement('button');
+    starBtn.className = 'featured-star-btn';
+    starBtn.title = isFeatured ? 'Remove from Featured' : 'Mark as Featured';
+    starBtn.textContent = isFeatured ? '★' : '☆';
+    starBtn.addEventListener('click', () => {
+      if (isFeatured) {
+        featuredNames = featuredNames.filter(f => !(f.name === person.name && f.category === person.category));
+      } else {
+        featuredNames.push({ name: person.name, category: person.category });
+      }
       renderTray();
     });
 
-    // ── Bin header ─────────────────────────────────────────────
-    const header = document.createElement('div');
-    header.className = 'tray-bin-header';
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'selected-row-name';
+    nameSpan.textContent = person.name;
 
-    const catLabel = document.createElement('span');
-    catLabel.className = 'tray-bin-label';
-    catLabel.textContent = category;
+    const catSpan = document.createElement('span');
+    catSpan.className = 'selected-row-category';
+    catSpan.textContent = person.category;
 
-    const removeAllBtn = document.createElement('button');
-    removeAllBtn.className = 'tray-bin-remove';
-    removeAllBtn.title = `Remove all ${category}`;
-    removeAllBtn.textContent = '×';
-    removeAllBtn.addEventListener('click', e => {
-      e.stopPropagation();
-      (selectedByCategory[category] || []).forEach(name => {
-        const card = document.querySelector(`.person-card[data-name="${CSS.escape(name)}"][data-category="${CSS.escape(category)}"]`);
-        if (card) card.classList.remove('selected');
-      });
-      delete selectedByCategory[category];
-      categoryOrder = categoryOrder.filter(c => c !== category);
-      renderTray();
-      updateGenerateBtn();
-    });
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'selected-row-remove';
+    removeBtn.title = 'Remove';
+    removeBtn.textContent = '×';
+    removeBtn.addEventListener('click', () => removePerson(person.name, person.category));
 
-    header.appendChild(catLabel);
-    header.appendChild(removeAllBtn);
-    bin.appendChild(header);
-
-    // ── Bin body (chips) ────────────────────────────────────────
-    const binBody = document.createElement('div');
-    binBody.className = 'tray-bin-body';
-
-    names.forEach((name, chipIndex) => {
-      const chip = document.createElement('div');
-      chip.className = 'tray-chip';
-      chip.draggable = true;
-      chip.dataset.index = chipIndex;
-
-      chip.addEventListener('dragstart', e => {
-        e.stopPropagation();
-        dragChipSrc = { category, index: chipIndex };
-        chip.classList.add('dragging');
-        e.dataTransfer.effectAllowed = 'move';
-      });
-      chip.addEventListener('dragend', () => {
-        chip.classList.remove('dragging');
-        dragChipSrc = null;
-        binBody.querySelectorAll('.tray-chip').forEach(c => c.classList.remove('drag-over'));
-      });
-      chip.addEventListener('dragover', e => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (!dragChipSrc || dragChipSrc.category !== category || dragChipSrc.index === chipIndex) return;
-        e.dataTransfer.dropEffect = 'move';
-        binBody.querySelectorAll('.tray-chip').forEach(c => c.classList.remove('drag-over'));
-        chip.classList.add('drag-over');
-      });
-      chip.addEventListener('drop', e => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (!dragChipSrc || dragChipSrc.category !== category || dragChipSrc.index === chipIndex) return;
-        const arr = selectedByCategory[category];
-        const [moved] = arr.splice(dragChipSrc.index, 1);
-        arr.splice(chipIndex, 0, moved);
-        dragChipSrc = null;
-        renderTray();
-      });
-
-      const chipLabel = document.createElement('span');
-      chipLabel.textContent = name;
-      const chipBtn = document.createElement('button');
-      chipBtn.title = 'Remove';
-      chipBtn.textContent = '×';
-      chipBtn.addEventListener('click', e => {
-        e.stopPropagation();
-        removePerson(name, category);
-      });
-      chip.appendChild(chipLabel);
-      chip.appendChild(chipBtn);
-      binBody.appendChild(chip);
-    });
-
-    bin.appendChild(binBody);
-    tray.appendChild(bin);
+    row.appendChild(starBtn);
+    row.appendChild(nameSpan);
+    row.appendChild(catSpan);
+    row.appendChild(removeBtn);
+    list.appendChild(row);
   });
+
+  tray.appendChild(list);
 }
 
 // ─── REMOVE PERSON ─────────────────────────────────────────────
 function removePerson(name, category) {
-  if (!selectedByCategory[category]) return;
-  selectedByCategory[category] = selectedByCategory[category].filter(n => n !== name);
-  if (selectedByCategory[category].length === 0) {
-    delete selectedByCategory[category];
-    categoryOrder = categoryOrder.filter(c => c !== category);
-  }
+  selectedPeople = selectedPeople.filter(p => !(p.name === name && p.category === category));
+  featuredNames  = featuredNames.filter(f => !(f.name === name && f.category === category));
 
   const card = document.querySelector(`.person-card[data-name="${CSS.escape(name)}"][data-category="${CSS.escape(category)}"]`);
   if (card) card.classList.remove('selected');
@@ -457,8 +432,8 @@ function removePerson(name, category) {
 
 // ─── UPDATE GENERATE BUTTON ────────────────────────────────────
 function updateGenerateBtn() {
-  const hasTitle = docTitleInput.value.trim().length > 0;
-  const totalSelected = Object.values(selectedByCategory).reduce((s, arr) => s + arr.length, 0);
+  const hasTitle     = docTitleInput.value.trim().length > 0;
+  const totalSelected = selectedPeople.length;
   const hasSelections = totalSelected > 0;
 
   generateBtn.disabled = !(hasTitle && hasSelections);
@@ -480,14 +455,13 @@ docTitleInput.addEventListener('input', updateGenerateBtn);
 generateBtn.addEventListener('click', async () => {
   if (isGenerating) return;
   const title = docTitleInput.value.trim();
-  const totalSelected = Object.values(selectedByCategory).reduce((s, arr) => s + arr.length, 0);
-  if (!title || totalSelected === 0) return;
+  if (!title || selectedPeople.length === 0) return;
 
   isGenerating = true;
 
   resultEl.style.display = 'none';
-  errorEl.style.display = 'none';
-  generateBtn.disabled = true;
+  errorEl.style.display  = 'none';
+  generateBtn.disabled   = true;
   generateBtn.querySelector('span').textContent = 'Generating…';
   generateSeconds = 0;
   generateMeta.textContent = 'Building your document… 0:00';
@@ -499,29 +473,29 @@ generateBtn.addEventListener('click', async () => {
   }, 1000);
 
   try {
-    const orderedSelections = categoryOrder.map(cat => ({
-      category: cat,
-      names: selectedByCategory[cat]
+    const payload = encodeURIComponent(JSON.stringify({
+      title,
+      featuredNames,
+      allSelections: selectedPeople
     }));
-    const payload = encodeURIComponent(JSON.stringify({ title, selections: orderedSelections }));
     const data = await jsonp(`${APPS_SCRIPT_URL}?action=generateDocument&payload=${payload}`);
 
     if (!data.success) throw new Error(data.error || 'Document generation failed.');
 
     resultTitle.textContent = data.docTitle;
-    resultLink.href = data.docUrl;
-    resultEl.style.display = 'block';
+    resultLink.href         = data.docUrl;
+    resultEl.style.display  = 'block';
     resultEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     generateMeta.textContent = 'Document created successfully.';
 
   } catch (err) {
-    errorEl.textContent = `Something went wrong: ${err.message}`;
-    errorEl.style.display = 'block';
+    errorEl.textContent    = `Something went wrong: ${err.message}`;
+    errorEl.style.display  = 'block';
     generateMeta.textContent = 'An error occurred. Please try again.';
   } finally {
     clearInterval(generateTimer);
-    generateTimer = null;
-    isGenerating = false;
+    generateTimer  = null;
+    isGenerating   = false;
     generateBtn.disabled = false;
     generateBtn.querySelector('span').textContent = 'Generate Document';
     updateGenerateBtn();
