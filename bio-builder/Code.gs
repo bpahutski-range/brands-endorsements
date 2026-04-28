@@ -335,18 +335,27 @@ function generateDocument(docTitle, featuredNames, allSelections) {
             .setFontFamily('Arial').setFontSize(11).setBold(false)
             .setForegroundColor('#333333');
 
-          // Re-apply hyperlinks from rich-text source
+          // Re-apply rich-text formatting (links, bold, italic, underline)
           const richText = richTextMap[key];
           if (richText) {
             const textEl = bioPara.editAsText();
             let pos = 0;
             for (const run of richText.getRuns()) {
               const runText = run.getText();
-              const url     = run.getLinkUrl();
-              if (url && runText.length > 0) {
-                try { textEl.setLinkUrl(pos, pos + runText.length - 1, url); } catch (_) {}
+              const runLen  = runText.length;
+              if (runLen === 0) continue;
+
+              const url   = run.getLinkUrl();
+              const style = run.getTextStyle();
+
+              if (url) {
+                try { textEl.setLinkUrl(pos, pos + runLen - 1, url); } catch (_) {}
               }
-              pos += runText.length;
+              if (style.isBold()      !== null) textEl.setBold(pos,      pos + runLen - 1, style.isBold());
+              if (style.isItalic()    !== null) textEl.setItalic(pos,    pos + runLen - 1, style.isItalic());
+              if (style.isUnderline() !== null) textEl.setUnderline(pos, pos + runLen - 1, style.isUnderline());
+
+              pos += runLen;
             }
           }
         });
