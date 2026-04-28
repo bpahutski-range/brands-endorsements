@@ -137,12 +137,12 @@ const BRAND_COLOR  = '#003e02';
 // allSelections: [{ name, category }, ...] all selected talent
 //
 // Document order rules:
-//   1. "Featured Talent" section lists featured names (names only, no bios).
-//   2. Categories: featured name categories first (in featured order),
-//      then remaining categories in manual allSelections order.
-//   3. Genders within each category: featured names' genders first (in the
-//      order they appear among featuredNames), then remaining genders in
-//      manual allSelections order.
+//   1. "Featured Talent" section: featured names listed in star priority order.
+//   2. Categories: featured name categories first (in order of first appearance
+//      among featuredNames), then remaining categories in manual order.
+//   3. Genders within each category: genders of featured names first (in order
+//      of first appearance among featuredNames for that category), then
+//      remaining genders in manual order.
 //   4. Within each gender group: featured names bubble to top (by their
 //      featuredNames index); all others retain their manual allSelections order.
 //   5. A blank line separates gender groups within a category.
@@ -191,21 +191,18 @@ function generateDocument(docTitle, featuredNames, allSelections) {
       }
     });
 
-    // ── Derive order directly from allSelections (manual/frontend order) ────────
-    // Category order and gender order within each category come from the sequence
-    // in which they first appear in allSelections. No algorithmic reordering.
-    const orderedCategories       = [];
-    const orderedGendersByCategory = {};  // { cat: [gender, ...] in appearance order }
-    const selectionsByGroup       = {};   // { 'cat::gender': [selections] in appearance order }
+    // ── Build selection groups, recording manual order as fallback ──────────────
+    const selectionsByGroup       = {};  // { 'cat::gender': [selections] in appearance order }
+    const manualCategoryOrder     = [];
+    const manualGendersByCategory = {};
 
     allSelections.forEach(s => {
-      const key    = `${s.category}::${s.name}`;
-      const gender = dataMap[key]?.gender || '';
+      const gender = dataMap[`${s.category}::${s.name}`]?.gender || '';
       const gKey   = `${s.category}::${gender}`;
 
-      if (!orderedCategories.includes(s.category))                    orderedCategories.push(s.category);
-      if (!orderedGendersByCategory[s.category])                      orderedGendersByCategory[s.category] = [];
-      if (!orderedGendersByCategory[s.category].includes(gender))     orderedGendersByCategory[s.category].push(gender);
+      if (!manualCategoryOrder.includes(s.category))                 manualCategoryOrder.push(s.category);
+      if (!manualGendersByCategory[s.category])                      manualGendersByCategory[s.category] = [];
+      if (!manualGendersByCategory[s.category].includes(gender))     manualGendersByCategory[s.category].push(gender);
       if (!selectionsByGroup[gKey])                                   selectionsByGroup[gKey] = [];
       selectionsByGroup[gKey].push(s);
     });
@@ -214,6 +211,34 @@ function generateDocument(docTitle, featuredNames, allSelections) {
     const featuredKeyOrder = {};
     featuredNames.forEach((f, i) => {
       featuredKeyOrder[`${f.category}::${f.name}`] = i;
+    });
+
+    // ── Category order: featured categories first (in featured order),
+    //    then remaining categories in manual allSelections order.
+    const featuredCategories           = [];
+    const featuredGenderLeadByCategory = {};  // { cat: [gender, ...] derived from featuredNames }
+    featuredNames.forEach(f => {
+      const gender = dataMap[`${f.category}::${f.name}`]?.gender || '';
+      if (!featuredCategories.includes(f.category))                          featuredCategories.push(f.category);
+      if (!featuredGenderLeadByCategory[f.category])                         featuredGenderLeadByCategory[f.category] = [];
+      if (!featuredGenderLeadByCategory[f.category].includes(gender))        featuredGenderLeadByCategory[f.category].push(gender);
+    });
+
+    const orderedCategories = [
+      ...featuredCategories,
+      ...manualCategoryOrder.filter(c => !featuredCategories.includes(c))
+    ];
+
+    // ── Gender order per category: featured genders first (in featured order),
+    //    then remaining genders in manual allSelections order.
+    const orderedGendersByCategory = {};
+    orderedCategories.forEach(cat => {
+      const featuredGenders = featuredGenderLeadByCategory[cat] || [];
+      const manualGenders   = manualGendersByCategory[cat]      || [];
+      orderedGendersByCategory[cat] = [
+        ...featuredGenders,
+        ...manualGenders.filter(g => !featuredGenders.includes(g))
+      ];
     });
 
     // ── Create doc ────────────────────────────────────────────────────────────
