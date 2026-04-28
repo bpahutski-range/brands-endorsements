@@ -10,7 +10,7 @@ const DRIVE_FOLDER_ID = '1Z4MdMUdXC_P1XU7yTqQ7h4_yREKGbK5E';
 const SHEET_ID = "1T0Ngu2mg8BocStVKSfkYUVnzzGUPbVmrGYpQYrZyNIU";
 
 // The five tabs we'll be pulling from
-const TABS = ["Film/TV", "Musician", "Digital", "Athlete", "Culinary"];
+const TABS = ["Film/TV", "Musician", "Digital", "Sports", "Culinary"];
 
 // The column names in the Sheet (zero-indexed)
 // NOTE: GENDER column sits between NAME and BIOS
