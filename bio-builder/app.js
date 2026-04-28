@@ -46,7 +46,7 @@ const TABS = ["Film/TV", "Musician", "Digital", "Sports", "Culinary"];
 
 // ─── STATE ─────────────────────────────────────────────────────
 let roster         = {};
-let selectedPeople = [];  // flat [{ name, category }] — selection tracking & count only
+let selectedPeople = [];  // flat [{ name, category }] — used only for selection tracking & count
 let featuredNames  = [];  // [{ name, category }] in featured priority order
 let activeTab      = "Film/TV";
 let isGenerating   = false;
@@ -54,14 +54,16 @@ let generateTimer  = null;
 let generateSeconds = 0;
 
 // ─── HIERARCHY STATE ───────────────────────────────────────────
-let categoryOrder         = [];   // ['Film/TV', 'Sports', ...]
-let genderOrderByCategory = {};   // { 'Film/TV': ['M', 'F'], ... }
-let peopleOrderByGroup    = {};   // { 'Film/TV::M': ['Alice', 'Bob'], ... }
+// Three-level structure: categories → genders → people
+// Order within each level is user-controllable via drag.
+let categoryOrder         = [];  // ['Film/TV', 'Sports', ...]
+let genderOrderByCategory = {};  // { 'Film/TV': ['M', 'F'], ... }
+let peopleOrderByGroup    = {};  // { 'Film/TV::M': ['Alice', 'Bob'], ... }
 let collapsedCategories   = new Set();
 let collapsedGenders      = new Set();  // keyed as 'category::gender'
 
 // ─── DRAG STATE ────────────────────────────────────────────────
-let _handleActive  = false;
+let _handleActive  = false;  // true only while a drag-handle is held
 let _dragSrc       = null;
 let _dragContainer = null;
 
@@ -273,7 +275,7 @@ document.getElementById('categoryTabs').addEventListener('click', e => {
   filterRoster();
 });
 
-// ─── HIERARCHY HELPERS ─────────────────────────────────────────
+// ─── HIERARCHY HELPERS ──────────────────────────────────────────
 function getGender(name, category) {
   return (roster[category] || []).find(p => p.name === name)?.gender || '';
 }
@@ -282,11 +284,11 @@ function addToHierarchy(name, category) {
   const gender   = getGender(name, category);
   const groupKey = `${category}::${gender}`;
 
-  if (!categoryOrder.includes(category))                 categoryOrder.push(category);
-  if (!genderOrderByCategory[category])                  genderOrderByCategory[category] = [];
-  if (!genderOrderByCategory[category].includes(gender)) genderOrderByCategory[category].push(gender);
-  if (!peopleOrderByGroup[groupKey])                     peopleOrderByGroup[groupKey] = [];
-  if (!peopleOrderByGroup[groupKey].includes(name))      peopleOrderByGroup[groupKey].push(name);
+  if (!categoryOrder.includes(category))                  categoryOrder.push(category);
+  if (!genderOrderByCategory[category])                   genderOrderByCategory[category] = [];
+  if (!genderOrderByCategory[category].includes(gender))  genderOrderByCategory[category].push(gender);
+  if (!peopleOrderByGroup[groupKey])                      peopleOrderByGroup[groupKey] = [];
+  if (!peopleOrderByGroup[groupKey].includes(name))       peopleOrderByGroup[groupKey].push(name);
 }
 
 function removeFromHierarchy(name, category) {
@@ -308,7 +310,7 @@ function removeFromHierarchy(name, category) {
   }
 }
 
-// Returns ordered flat array for backend — respects all three drag levels.
+// Returns ordered flat array for backend (respects all three drag levels)
 function getOrderedSelections() {
   const result = [];
   for (const cat of categoryOrder) {
@@ -321,40 +323,43 @@ function getOrderedSelections() {
   return result;
 }
 
-// Reads order back from the live DOM after a drop.
-// IMPORTANT: only updates levels whose body element is present (expanded).
-// Collapsed levels are skipped so their data survives the re-order. (Bug 1 fix)
+// Reads category / gender / person order back from the live DOM after a drop.
+// Only updates state for levels that are expanded (body present in DOM).
+// Collapsed levels are untouched so their data survives the re-order.
 function syncOrderFromDOM() {
-  // Category blocks are always in the DOM regardless of collapse state.
-  categoryOrder = [...document.querySelectorAll('.selected-list > .tray-cat-block')]
-    .map(el => el.dataset.category);
+  // Category order is always readable — the cat-blocks themselves are never hidden
+  categoryOrder = [
+    ...document.querySelectorAll('.selected-list > .tray-cat-block')
+  ].map(el => el.dataset.category);
 
   categoryOrder.forEach(cat => {
-    // catBody is absent when collapsed — skip to preserve existing gender order.
+    // catBody is absent when the category is collapsed — skip if so
     const catBody = document.querySelector(
       `.tray-cat-block[data-category="${CSS.escape(cat)}"] > .tray-cat-body`
     );
     if (!catBody) return;
 
-    genderOrderByCategory[cat] = [...catBody.querySelectorAll(':scope > .tray-gender-block')]
-      .map(el => el.dataset.gender);
+    genderOrderByCategory[cat] = [
+      ...catBody.querySelectorAll(':scope > .tray-gender-block')
+    ].map(el => el.dataset.gender);
 
     (genderOrderByCategory[cat] || []).forEach(gender => {
       const groupKey = `${cat}::${gender}`;
-      // genderBody is absent when collapsed — skip to preserve existing people order.
+      // genderBody is absent when the gender group is collapsed — skip if so
       const genderBody = catBody.querySelector(
         `.tray-gender-block[data-gender="${CSS.escape(gender)}"] > .tray-gender-body`
       );
       if (!genderBody) return;
 
-      peopleOrderByGroup[groupKey] = [...genderBody.querySelectorAll(':scope > .selected-row')]
-        .map(el => el.dataset.name);
+      peopleOrderByGroup[groupKey] = [
+        ...genderBody.querySelectorAll(':scope > .selected-row')
+      ].map(el => el.dataset.name);
     });
   });
 }
 
 // ─── DRAG INIT ─────────────────────────────────────────────────
-// Attaches drag-and-drop to el, constrained within container.
+// Generic: attaches drag-and-drop to el, constrained within container.
 // Drag only starts when _handleActive is true (set by handle mousedown).
 function initDrag(el, container) {
   el.addEventListener('dragstart', e => {
@@ -381,8 +386,6 @@ function initDrag(el, container) {
   el.addEventListener('drop', e => {
     e.preventDefault();
     el.classList.remove('tray-drag-over');
-    // Check container match BEFORE stopPropagation so unmatched drops bubble
-    // up to the correct handler. (Bug 2 fix)
     if (!_dragSrc || _dragSrc === el || _dragContainer !== container) return;
     e.stopPropagation();
     const siblings = [...container.children];
@@ -514,18 +517,17 @@ function renderTray() {
     tray.appendChild(featSection);
   }
 
-  // ── Three-level hierarchy ─────────────────────────────────────
+  // ── Three-level hierarchy ───────────────────────────────────
   const list = document.createElement('div');
   list.className = 'selected-list';
-
-  const multiCat = categoryOrder.length > 1;
 
   categoryOrder.forEach(cat => {
     const genders      = genderOrderByCategory[cat] || [];
     const catTotal     = genders.reduce((sum, g) => sum + (peopleOrderByGroup[`${cat}::${g}`]?.length || 0), 0);
     const catCollapsed = collapsedCategories.has(cat);
+    const multiCat     = categoryOrder.length > 1;
 
-    // ── Category block ──────────────────────────────────────────
+    // ── Category block ──────────────────────────────────────
     const catBlock = document.createElement('div');
     catBlock.className = 'tray-cat-block';
     catBlock.dataset.category = cat;
@@ -566,14 +568,13 @@ function renderTray() {
       const catBody = document.createElement('div');
       catBody.className = 'tray-cat-body';
 
-      const multiGender = genders.length > 1;
-
       genders.forEach(gender => {
         const groupKey        = `${cat}::${gender}`;
         const people          = peopleOrderByGroup[groupKey] || [];
         const genderCollapsed = collapsedGenders.has(groupKey);
+        const multiGender     = genders.length > 1;
 
-        // ── Gender block ────────────────────────────────────────
+        // ── Gender block ──────────────────────────────────
         const genderBlock = document.createElement('div');
         genderBlock.className = 'tray-gender-block';
         genderBlock.dataset.gender = gender;
@@ -614,12 +615,11 @@ function renderTray() {
           const genderBody = document.createElement('div');
           genderBody.className = 'tray-gender-body';
 
-          const multiPeople = people.length > 1;
-
           people.forEach(name => {
             const isFeatured = featuredNames.some(f => f.name === name && f.category === cat);
+            const multiPeople = people.length > 1;
 
-            // ── Person row ────────────────────────────────────────
+            // ── Person row ──────────────────────────────
             const row = document.createElement('div');
             row.className = 'selected-row' + (isFeatured ? ' is-featured' : '');
             row.dataset.name     = name;

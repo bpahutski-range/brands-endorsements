@@ -191,21 +191,22 @@ function generateDocument(docTitle, featuredNames, allSelections) {
       }
     });
 
-    // ── Build selection groups (manual order from allSelections) ────────────────
-    const selectionsByGroup = {};  // { 'cat::gender': [selections, ...] in appearance order }
-
-    // Also capture the raw manual order of categories and genders as a fallback
-    const manualCategoryOrder = [];
-    const manualGendersByCategory = {};
+    // ── Derive order directly from allSelections (manual/frontend order) ────────
+    // Category order and gender order within each category come from the sequence
+    // in which they first appear in allSelections. No algorithmic reordering.
+    const orderedCategories       = [];
+    const orderedGendersByCategory = {};  // { cat: [gender, ...] in appearance order }
+    const selectionsByGroup       = {};   // { 'cat::gender': [selections] in appearance order }
 
     allSelections.forEach(s => {
-      const gender = dataMap[`${s.category}::${s.name}`]?.gender || '';
+      const key    = `${s.category}::${s.name}`;
+      const gender = dataMap[key]?.gender || '';
       const gKey   = `${s.category}::${gender}`;
 
-      if (!manualCategoryOrder.includes(s.category))                  manualCategoryOrder.push(s.category);
-      if (!manualGendersByCategory[s.category])                        manualGendersByCategory[s.category] = [];
-      if (!manualGendersByCategory[s.category].includes(gender))       manualGendersByCategory[s.category].push(gender);
-      if (!selectionsByGroup[gKey])                                    selectionsByGroup[gKey] = [];
+      if (!orderedCategories.includes(s.category))                    orderedCategories.push(s.category);
+      if (!orderedGendersByCategory[s.category])                      orderedGendersByCategory[s.category] = [];
+      if (!orderedGendersByCategory[s.category].includes(gender))     orderedGendersByCategory[s.category].push(gender);
+      if (!selectionsByGroup[gKey])                                   selectionsByGroup[gKey] = [];
       selectionsByGroup[gKey].push(s);
     });
 
@@ -213,35 +214,6 @@ function generateDocument(docTitle, featuredNames, allSelections) {
     const featuredKeyOrder = {};
     featuredNames.forEach((f, i) => {
       featuredKeyOrder[`${f.category}::${f.name}`] = i;
-    });
-
-    // ── Category order: featured categories first (in featured order),
-    //    then remaining categories in manual allSelections order.
-    const featuredCategories = [];
-    const featuredGenderLeadByCategory = {};  // { cat: [gender, ...] from featured names }
-    featuredNames.forEach(f => {
-      const gender = dataMap[`${f.category}::${f.name}`]?.gender || '';
-      if (!featuredCategories.includes(f.category)) featuredCategories.push(f.category);
-      if (!featuredGenderLeadByCategory[f.category]) featuredGenderLeadByCategory[f.category] = [];
-      if (!featuredGenderLeadByCategory[f.category].includes(gender))
-        featuredGenderLeadByCategory[f.category].push(gender);
-    });
-
-    const orderedCategories = [
-      ...featuredCategories,
-      ...manualCategoryOrder.filter(c => !featuredCategories.includes(c))
-    ];
-
-    // ── Gender order per category: featured genders first (in featured order),
-    //    then remaining genders in manual allSelections order.
-    const orderedGendersByCategory = {};
-    orderedCategories.forEach(cat => {
-      const featuredGenders = featuredGenderLeadByCategory[cat] || [];
-      const manualGenders   = manualGendersByCategory[cat]      || [];
-      orderedGendersByCategory[cat] = [
-        ...featuredGenders,
-        ...manualGenders.filter(g => !featuredGenders.includes(g))
-      ];
     });
 
     // ── Create doc ────────────────────────────────────────────────────────────
@@ -307,10 +279,12 @@ function generateDocument(docTitle, featuredNames, allSelections) {
       let isFirstGenderGroup = true;
 
       genders.forEach(gender => {
-        // Within each group: featured names bubble to top by their featuredNames
-        // index; everyone else retains their manual allSelections order.
-        // JS sort is stable so non-featured relative order is preserved.
-        const people = (selectionsByGroup[`${tabName}::${gender}`] || [])
+        const groupSelections = (selectionsByGroup[`${tabName}::${gender}`] || []);
+
+        // Within each group: featured names first (by their featuredNames index),
+        // then everyone else in the original manual order. JS sort is stable so
+        // non-featured people retain their relative allSelections order.
+        const people = groupSelections
           .slice()
           .sort((a, b) => {
             const aFeat = featuredKeyOrder[`${tabName}::${a.name}`] !== undefined
