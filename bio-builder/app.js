@@ -42,7 +42,7 @@ function initGate() {
 
 // ─── CONFIGURATION ─────────────────────────────────────────────
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxtWLCPcmi64VwBP7dEHn677SOzbWezr8HI6Ekm4RFXnMzXaBpIttxdMajeYFYwXf97/exec";
-const TABS = ["Film/TV", "Musician", "Digital", "Athlete", "Culinary"];
+const TABS = ["Film/TV", "Musician", "Digital", "Sports", "Culinary"];
 
 // ─── STATE ─────────────────────────────────────────────────────
 let roster        = {};
