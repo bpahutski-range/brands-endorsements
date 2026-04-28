@@ -45,32 +45,44 @@ const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxtWLCPcmi64VwB
 const TABS = ["Film/TV", "Musician", "Digital", "Sports", "Culinary"];
 
 // ─── STATE ─────────────────────────────────────────────────────
-let roster        = {};
-let selectedPeople = [];  // [{ name, category }] in selection order
+let roster         = {};
+let selectedPeople = [];  // flat [{ name, category }] — selection tracking & count only
 let featuredNames  = [];  // [{ name, category }] in featured priority order
-// let categoryOrder    = [];     // REMOVED — ordering is now automatic
-// let selectedByCategory = {};   // REMOVED — replaced by selectedPeople flat array
 let activeTab      = "Film/TV";
 let isGenerating   = false;
 let generateTimer  = null;
 let generateSeconds = 0;
 
+// ─── HIERARCHY STATE ───────────────────────────────────────────
+let categoryOrder         = [];   // ['Film/TV', 'Sports', ...]
+let genderOrderByCategory = {};   // { 'Film/TV': ['M', 'F'], ... }
+let peopleOrderByGroup    = {};   // { 'Film/TV::M': ['Alice', 'Bob'], ... }
+let collapsedCategories   = new Set();
+let collapsedGenders      = new Set();  // keyed as 'category::gender'
+
+// ─── DRAG STATE ────────────────────────────────────────────────
+let _handleActive  = false;
+let _dragSrc       = null;
+let _dragContainer = null;
+
+document.addEventListener('mouseup', () => { _handleActive = false; });
+
 // ─── DOM REFS ──────────────────────────────────────────────────
-const rosterPanels  = document.getElementById('rosterPanels');
-const rosterLoading = document.getElementById('rosterLoading');
-const rosterFilter  = document.getElementById('rosterFilter');
-const tray          = document.getElementById('tray');
-const trayEmpty     = document.getElementById('trayEmpty');
-const selectionCount= document.getElementById('selectionCount');
-const clearAllBtn   = document.getElementById('clearAllBtn');
-const generateBtn   = document.getElementById('generateBtn');
-const generateMeta  = document.getElementById('generateMeta');
-const docTitleInput = document.getElementById('docTitle');
-const resultEl      = document.getElementById('result');
-const resultTitle   = document.getElementById('resultTitle');
-const resultLink    = document.getElementById('resultLink');
-const errorEl       = document.getElementById('error');
-const footerCount   = document.getElementById('footerCount');
+const rosterPanels   = document.getElementById('rosterPanels');
+const rosterLoading  = document.getElementById('rosterLoading');
+const rosterFilter   = document.getElementById('rosterFilter');
+const tray           = document.getElementById('tray');
+const trayEmpty      = document.getElementById('trayEmpty');
+const selectionCount = document.getElementById('selectionCount');
+const clearAllBtn    = document.getElementById('clearAllBtn');
+const generateBtn    = document.getElementById('generateBtn');
+const generateMeta   = document.getElementById('generateMeta');
+const docTitleInput  = document.getElementById('docTitle');
+const resultEl       = document.getElementById('result');
+const resultTitle    = document.getElementById('resultTitle');
+const resultLink     = document.getElementById('resultLink');
+const errorEl        = document.getElementById('error');
+const footerCount    = document.getElementById('footerCount');
 
 // ─── JSONP HELPER ──────────────────────────────────────────────
 function jsonp(url) {
@@ -261,18 +273,148 @@ document.getElementById('categoryTabs').addEventListener('click', e => {
   filterRoster();
 });
 
+// ─── HIERARCHY HELPERS ─────────────────────────────────────────
+function getGender(name, category) {
+  return (roster[category] || []).find(p => p.name === name)?.gender || '';
+}
+
+function addToHierarchy(name, category) {
+  const gender   = getGender(name, category);
+  const groupKey = `${category}::${gender}`;
+
+  if (!categoryOrder.includes(category))                 categoryOrder.push(category);
+  if (!genderOrderByCategory[category])                  genderOrderByCategory[category] = [];
+  if (!genderOrderByCategory[category].includes(gender)) genderOrderByCategory[category].push(gender);
+  if (!peopleOrderByGroup[groupKey])                     peopleOrderByGroup[groupKey] = [];
+  if (!peopleOrderByGroup[groupKey].includes(name))      peopleOrderByGroup[groupKey].push(name);
+}
+
+function removeFromHierarchy(name, category) {
+  const gender   = getGender(name, category);
+  const groupKey = `${category}::${gender}`;
+
+  if (!peopleOrderByGroup[groupKey]) return;
+
+  peopleOrderByGroup[groupKey] = peopleOrderByGroup[groupKey].filter(n => n !== name);
+
+  if (peopleOrderByGroup[groupKey].length === 0) {
+    delete peopleOrderByGroup[groupKey];
+    genderOrderByCategory[category] = (genderOrderByCategory[category] || []).filter(g => g !== gender);
+
+    if (genderOrderByCategory[category].length === 0) {
+      delete genderOrderByCategory[category];
+      categoryOrder = categoryOrder.filter(c => c !== category);
+    }
+  }
+}
+
+// Returns ordered flat array for backend — respects all three drag levels.
+function getOrderedSelections() {
+  const result = [];
+  for (const cat of categoryOrder) {
+    for (const gender of (genderOrderByCategory[cat] || [])) {
+      for (const name of (peopleOrderByGroup[`${cat}::${gender}`] || [])) {
+        result.push({ name, category: cat });
+      }
+    }
+  }
+  return result;
+}
+
+// Reads order back from the live DOM after a drop.
+// IMPORTANT: only updates levels whose body element is present (expanded).
+// Collapsed levels are skipped so their data survives the re-order. (Bug 1 fix)
+function syncOrderFromDOM() {
+  // Category blocks are always in the DOM regardless of collapse state.
+  categoryOrder = [...document.querySelectorAll('.selected-list > .tray-cat-block')]
+    .map(el => el.dataset.category);
+
+  categoryOrder.forEach(cat => {
+    // catBody is absent when collapsed — skip to preserve existing gender order.
+    const catBody = document.querySelector(
+      `.tray-cat-block[data-category="${CSS.escape(cat)}"] > .tray-cat-body`
+    );
+    if (!catBody) return;
+
+    genderOrderByCategory[cat] = [...catBody.querySelectorAll(':scope > .tray-gender-block')]
+      .map(el => el.dataset.gender);
+
+    (genderOrderByCategory[cat] || []).forEach(gender => {
+      const groupKey = `${cat}::${gender}`;
+      // genderBody is absent when collapsed — skip to preserve existing people order.
+      const genderBody = catBody.querySelector(
+        `.tray-gender-block[data-gender="${CSS.escape(gender)}"] > .tray-gender-body`
+      );
+      if (!genderBody) return;
+
+      peopleOrderByGroup[groupKey] = [...genderBody.querySelectorAll(':scope > .selected-row')]
+        .map(el => el.dataset.name);
+    });
+  });
+}
+
+// ─── DRAG INIT ─────────────────────────────────────────────────
+// Attaches drag-and-drop to el, constrained within container.
+// Drag only starts when _handleActive is true (set by handle mousedown).
+function initDrag(el, container) {
+  el.addEventListener('dragstart', e => {
+    if (!_handleActive) { e.preventDefault(); e.stopPropagation(); return; }
+    e.stopPropagation();
+    _dragSrc       = el;
+    _dragContainer = container;
+    e.dataTransfer.effectAllowed = 'move';
+    requestAnimationFrame(() => el.classList.add('dragging'));
+  });
+
+  el.addEventListener('dragover', e => {
+    if (_dragContainer !== container || _dragSrc === el) return;
+    e.preventDefault();
+    e.stopPropagation();
+    document.querySelectorAll('.tray-drag-over').forEach(x => x.classList.remove('tray-drag-over'));
+    el.classList.add('tray-drag-over');
+  });
+
+  el.addEventListener('dragleave', e => {
+    if (!el.contains(e.relatedTarget)) el.classList.remove('tray-drag-over');
+  });
+
+  el.addEventListener('drop', e => {
+    e.preventDefault();
+    el.classList.remove('tray-drag-over');
+    // Check container match BEFORE stopPropagation so unmatched drops bubble
+    // up to the correct handler. (Bug 2 fix)
+    if (!_dragSrc || _dragSrc === el || _dragContainer !== container) return;
+    e.stopPropagation();
+    const siblings = [...container.children];
+    const srcIdx   = siblings.indexOf(_dragSrc);
+    const tgtIdx   = siblings.indexOf(el);
+    if (srcIdx < tgtIdx) container.insertBefore(_dragSrc, el.nextSibling);
+    else                 container.insertBefore(_dragSrc, el);
+    syncOrderFromDOM();
+  });
+
+  el.addEventListener('dragend', e => {
+    e.stopPropagation();
+    _handleActive = false;
+    el.classList.remove('dragging');
+    document.querySelectorAll('.tray-drag-over').forEach(x => x.classList.remove('tray-drag-over'));
+    _dragSrc       = null;
+    _dragContainer = null;
+  });
+}
+
 // ─── TOGGLE PERSON ─────────────────────────────────────────────
 function togglePerson(name, category, card) {
   const idx = selectedPeople.findIndex(p => p.name === name && p.category === category);
   if (idx !== -1) {
-    // Deselect — also remove from featured if present
     selectedPeople.splice(idx, 1);
     featuredNames = featuredNames.filter(f => !(f.name === name && f.category === category));
     card.classList.remove('selected');
+    removeFromHierarchy(name, category);
   } else {
-    // Select
     selectedPeople.push({ name, category });
     card.classList.add('selected');
+    addToHierarchy(name, category);
   }
   renderTray();
   updateGenerateBtn();
@@ -280,8 +422,13 @@ function togglePerson(name, category, card) {
 
 // ─── CLEAR ALL ─────────────────────────────────────────────────
 function clearAll() {
-  selectedPeople = [];
-  featuredNames  = [];
+  selectedPeople        = [];
+  featuredNames         = [];
+  categoryOrder         = [];
+  genderOrderByCategory = {};
+  peopleOrderByGroup    = {};
+  collapsedCategories   = new Set();
+  collapsedGenders      = new Set();
   document.querySelectorAll('.person-card.selected').forEach(card => card.classList.remove('selected'));
   renderTray();
   updateGenerateBtn();
@@ -290,10 +437,6 @@ function clearAll() {
 clearAllBtn.addEventListener('click', clearAll);
 
 // ─── RENDER TRAY ───────────────────────────────────────────────
-// Drag-and-drop ordering has been removed.
-// Category and gender ordering is now handled automatically by the backend
-// based on the Featured Names selection.
-
 function renderTray() {
   tray.querySelectorAll('.featured-order-section, .selected-list').forEach(el => el.remove());
 
@@ -310,7 +453,7 @@ function renderTray() {
   selectionCount.textContent = `— ${total} selected`;
   clearAllBtn.style.display = 'block';
 
-  // ── Featured Order section ──────────────────────────────────
+  // ── Featured Order section ────────────────────────────────────
   if (featuredNames.length > 0) {
     const featSection = document.createElement('div');
     featSection.className = 'featured-order-section';
@@ -371,48 +514,167 @@ function renderTray() {
     tray.appendChild(featSection);
   }
 
-  // ── All Selected list ───────────────────────────────────────
+  // ── Three-level hierarchy ─────────────────────────────────────
   const list = document.createElement('div');
   list.className = 'selected-list';
 
-  selectedPeople.forEach(person => {
-    const isFeatured = featuredNames.some(f => f.name === person.name && f.category === person.category);
+  const multiCat = categoryOrder.length > 1;
 
-    const row = document.createElement('div');
-    row.className = 'selected-row' + (isFeatured ? ' is-featured' : '');
+  categoryOrder.forEach(cat => {
+    const genders      = genderOrderByCategory[cat] || [];
+    const catTotal     = genders.reduce((sum, g) => sum + (peopleOrderByGroup[`${cat}::${g}`]?.length || 0), 0);
+    const catCollapsed = collapsedCategories.has(cat);
 
-    const starBtn = document.createElement('button');
-    starBtn.className = 'featured-star-btn';
-    starBtn.title = isFeatured ? 'Remove from Featured' : 'Mark as Featured';
-    starBtn.textContent = isFeatured ? '★' : '☆';
-    starBtn.addEventListener('click', () => {
-      if (isFeatured) {
-        featuredNames = featuredNames.filter(f => !(f.name === person.name && f.category === person.category));
-      } else {
-        featuredNames.push({ name: person.name, category: person.category });
-      }
+    // ── Category block ──────────────────────────────────────────
+    const catBlock = document.createElement('div');
+    catBlock.className = 'tray-cat-block';
+    catBlock.dataset.category = cat;
+    catBlock.draggable = multiCat;
+
+    const catRow = document.createElement('div');
+    catRow.className = 'tray-cat-row';
+
+    const catHandle = document.createElement('span');
+    catHandle.className = 'drag-handle drag-handle-light' + (multiCat ? '' : ' drag-handle-hidden');
+    catHandle.textContent = '⠿';
+    catHandle.addEventListener('mousedown', () => { _handleActive = true; });
+
+    const catToggle = document.createElement('button');
+    catToggle.className = 'collapse-toggle collapse-toggle-light';
+    catToggle.textContent = catCollapsed ? '▶' : '▼';
+    catToggle.addEventListener('click', e => {
+      e.stopPropagation();
+      collapsedCategories.has(cat) ? collapsedCategories.delete(cat) : collapsedCategories.add(cat);
       renderTray();
     });
 
-    const nameSpan = document.createElement('span');
-    nameSpan.className = 'selected-row-name';
-    nameSpan.textContent = person.name;
+    const catName = document.createElement('span');
+    catName.className = 'tray-cat-name';
+    catName.textContent = cat;
 
-    const catSpan = document.createElement('span');
-    catSpan.className = 'selected-row-category';
-    catSpan.textContent = person.category;
+    const catCount = document.createElement('span');
+    catCount.className = 'tray-level-count tray-level-count-light';
+    catCount.textContent = `(${catTotal})`;
 
-    const removeBtn = document.createElement('button');
-    removeBtn.className = 'selected-row-remove';
-    removeBtn.title = 'Remove';
-    removeBtn.textContent = '×';
-    removeBtn.addEventListener('click', () => removePerson(person.name, person.category));
+    catRow.appendChild(catHandle);
+    catRow.appendChild(catToggle);
+    catRow.appendChild(catName);
+    catRow.appendChild(catCount);
+    catBlock.appendChild(catRow);
 
-    row.appendChild(starBtn);
-    row.appendChild(nameSpan);
-    row.appendChild(catSpan);
-    row.appendChild(removeBtn);
-    list.appendChild(row);
+    if (!catCollapsed) {
+      const catBody = document.createElement('div');
+      catBody.className = 'tray-cat-body';
+
+      const multiGender = genders.length > 1;
+
+      genders.forEach(gender => {
+        const groupKey        = `${cat}::${gender}`;
+        const people          = peopleOrderByGroup[groupKey] || [];
+        const genderCollapsed = collapsedGenders.has(groupKey);
+
+        // ── Gender block ────────────────────────────────────────
+        const genderBlock = document.createElement('div');
+        genderBlock.className = 'tray-gender-block';
+        genderBlock.dataset.gender = gender;
+        genderBlock.draggable = multiGender;
+
+        const genderRow = document.createElement('div');
+        genderRow.className = 'tray-gender-row';
+
+        const gHandle = document.createElement('span');
+        gHandle.className = 'drag-handle' + (multiGender ? '' : ' drag-handle-hidden');
+        gHandle.textContent = '⠿';
+        gHandle.addEventListener('mousedown', () => { _handleActive = true; });
+
+        const gToggle = document.createElement('button');
+        gToggle.className = 'collapse-toggle';
+        gToggle.textContent = genderCollapsed ? '▶' : '▼';
+        gToggle.addEventListener('click', e => {
+          e.stopPropagation();
+          collapsedGenders.has(groupKey) ? collapsedGenders.delete(groupKey) : collapsedGenders.add(groupKey);
+          renderTray();
+        });
+
+        const gLabel = document.createElement('span');
+        gLabel.className = 'tray-gender-label';
+        gLabel.textContent = gender || 'Unknown';
+
+        const gCount = document.createElement('span');
+        gCount.className = 'tray-level-count';
+        gCount.textContent = `(${people.length})`;
+
+        genderRow.appendChild(gHandle);
+        genderRow.appendChild(gToggle);
+        genderRow.appendChild(gLabel);
+        genderRow.appendChild(gCount);
+        genderBlock.appendChild(genderRow);
+
+        if (!genderCollapsed) {
+          const genderBody = document.createElement('div');
+          genderBody.className = 'tray-gender-body';
+
+          const multiPeople = people.length > 1;
+
+          people.forEach(name => {
+            const isFeatured = featuredNames.some(f => f.name === name && f.category === cat);
+
+            // ── Person row ────────────────────────────────────────
+            const row = document.createElement('div');
+            row.className = 'selected-row' + (isFeatured ? ' is-featured' : '');
+            row.dataset.name     = name;
+            row.dataset.category = cat;
+            row.draggable = multiPeople;
+
+            const pHandle = document.createElement('span');
+            pHandle.className = 'drag-handle' + (multiPeople ? '' : ' drag-handle-hidden');
+            pHandle.textContent = '⠿';
+            pHandle.addEventListener('mousedown', () => { _handleActive = true; });
+
+            const starBtn = document.createElement('button');
+            starBtn.className = 'featured-star-btn';
+            starBtn.title = isFeatured ? 'Remove from Featured' : 'Mark as Featured';
+            starBtn.textContent = isFeatured ? '★' : '☆';
+            starBtn.addEventListener('click', () => {
+              if (isFeatured) {
+                featuredNames = featuredNames.filter(f => !(f.name === name && f.category === cat));
+              } else {
+                featuredNames.push({ name, category: cat });
+              }
+              renderTray();
+            });
+
+            const nameSpan = document.createElement('span');
+            nameSpan.className = 'selected-row-name';
+            nameSpan.textContent = name;
+
+            const removeBtn = document.createElement('button');
+            removeBtn.className = 'selected-row-remove';
+            removeBtn.title = 'Remove';
+            removeBtn.textContent = '×';
+            removeBtn.addEventListener('click', () => removePerson(name, cat));
+
+            row.appendChild(pHandle);
+            row.appendChild(starBtn);
+            row.appendChild(nameSpan);
+            row.appendChild(removeBtn);
+
+            if (multiPeople) initDrag(row, genderBody);
+            genderBody.appendChild(row);
+          });
+
+          genderBlock.appendChild(genderBody);
+        }
+
+        if (multiGender) initDrag(genderBlock, catBody);
+        catBody.appendChild(genderBlock);
+      });
+
+      catBlock.appendChild(catBody);
+    }
+
+    if (multiCat) initDrag(catBlock, list);
+    list.appendChild(catBlock);
   });
 
   tray.appendChild(list);
@@ -422,6 +684,7 @@ function renderTray() {
 function removePerson(name, category) {
   selectedPeople = selectedPeople.filter(p => !(p.name === name && p.category === category));
   featuredNames  = featuredNames.filter(f => !(f.name === name && f.category === category));
+  removeFromHierarchy(name, category);
 
   const card = document.querySelector(`.person-card[data-name="${CSS.escape(name)}"][data-category="${CSS.escape(category)}"]`);
   if (card) card.classList.remove('selected');
@@ -432,7 +695,7 @@ function removePerson(name, category) {
 
 // ─── UPDATE GENERATE BUTTON ────────────────────────────────────
 function updateGenerateBtn() {
-  const hasTitle     = docTitleInput.value.trim().length > 0;
+  const hasTitle      = docTitleInput.value.trim().length > 0;
   const totalSelected = selectedPeople.length;
   const hasSelections = totalSelected > 0;
 
@@ -476,7 +739,7 @@ generateBtn.addEventListener('click', async () => {
     const payload = encodeURIComponent(JSON.stringify({
       title,
       featuredNames,
-      allSelections: selectedPeople
+      allSelections: getOrderedSelections()
     }));
     const data = await jsonp(`${APPS_SCRIPT_URL}?action=generateDocument&payload=${payload}`);
 

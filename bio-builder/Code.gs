@@ -138,12 +138,13 @@ const BRAND_COLOR  = '#003e02';
 //
 // Document order rules:
 //   1. "Featured Talent" section lists featured names (names only, no bios).
-//   2. Categories are ordered: featured name categories first (in order of
-//      first appearance among featuredNames), then remaining TABS order.
-//   3. Within each category, genders are ordered: first featured name's gender
-//      first, then M → F → NB for the remainder (NB always after F).
-//   4. Within each gender group: featured names appear first (by their
-//      featured priority), then non-featured in selection order.
+//   2. Categories: featured name categories first (in featured order),
+//      then remaining categories in manual allSelections order.
+//   3. Genders within each category: featured names' genders first (in the
+//      order they appear among featuredNames), then remaining genders in
+//      manual allSelections order.
+//   4. Within each gender group: featured names bubble to top (by their
+//      featuredNames index); all others retain their manual allSelections order.
 //   5. A blank line separates gender groups within a category.
 //   6. A blank line separates categories.
 // ============================================================
@@ -190,44 +191,57 @@ function generateDocument(docTitle, featuredNames, allSelections) {
       }
     });
 
-    // ── Compute gender order ──────────────────────────────────────────────────
-    // Base order is M → F → NB. The first featured name's gender is promoted
-    // to the front; the rest retain their relative M → F → NB ordering.
-    // Unknown / blank genders are always last.
-    const BASE_GENDER_ORDER = ['M', 'F', 'NB'];
-    let genderOrder = ['M', 'F', 'NB', ''];
+    // ── Build selection groups (manual order from allSelections) ────────────────
+    const selectionsByGroup = {};  // { 'cat::gender': [selections, ...] in appearance order }
 
-    if (featuredNames.length > 0) {
-      const firstKey    = `${featuredNames[0].category}::${featuredNames[0].name}`;
-      const firstGender = dataMap[firstKey]?.gender || 'M';
-      const others      = BASE_GENDER_ORDER.filter(g => g !== firstGender);
-      genderOrder = [firstGender, ...others, ''];
-    }
+    // Also capture the raw manual order of categories and genders as a fallback
+    const manualCategoryOrder = [];
+    const manualGendersByCategory = {};
 
-    // ── Compute category order ────────────────────────────────────────────────
-    // Featured name categories first (in order of first appearance), then
-    // remaining categories in default TABS order.
-    const featuredCategories = [];
-    for (const f of featuredNames) {
-      if (!featuredCategories.includes(f.category)) {
-        featuredCategories.push(f.category);
-      }
-    }
-    const orderedCategories = [
-      ...featuredCategories,
-      ...TABS.filter(t => categoriesNeeded.includes(t) && !featuredCategories.includes(t))
-    ].filter(c => categoriesNeeded.includes(c));
+    allSelections.forEach(s => {
+      const gender = dataMap[`${s.category}::${s.name}`]?.gender || '';
+      const gKey   = `${s.category}::${gender}`;
 
-    // ── Featured name priority lookup ─────────────────────────────────────────
+      if (!manualCategoryOrder.includes(s.category))                  manualCategoryOrder.push(s.category);
+      if (!manualGendersByCategory[s.category])                        manualGendersByCategory[s.category] = [];
+      if (!manualGendersByCategory[s.category].includes(gender))       manualGendersByCategory[s.category].push(gender);
+      if (!selectionsByGroup[gKey])                                    selectionsByGroup[gKey] = [];
+      selectionsByGroup[gKey].push(s);
+    });
+
+    // ── Featured name priority lookup (bubbles featured to top within each group)
     const featuredKeyOrder = {};
     featuredNames.forEach((f, i) => {
       featuredKeyOrder[`${f.category}::${f.name}`] = i;
     });
 
-    // ── Selection order lookup (for stable sort of non-featured) ──────────────
-    const selectionIndexMap = {};
-    allSelections.forEach((s, i) => {
-      selectionIndexMap[`${s.category}::${s.name}`] = i;
+    // ── Category order: featured categories first (in featured order),
+    //    then remaining categories in manual allSelections order.
+    const featuredCategories = [];
+    const featuredGenderLeadByCategory = {};  // { cat: [gender, ...] from featured names }
+    featuredNames.forEach(f => {
+      const gender = dataMap[`${f.category}::${f.name}`]?.gender || '';
+      if (!featuredCategories.includes(f.category)) featuredCategories.push(f.category);
+      if (!featuredGenderLeadByCategory[f.category]) featuredGenderLeadByCategory[f.category] = [];
+      if (!featuredGenderLeadByCategory[f.category].includes(gender))
+        featuredGenderLeadByCategory[f.category].push(gender);
+    });
+
+    const orderedCategories = [
+      ...featuredCategories,
+      ...manualCategoryOrder.filter(c => !featuredCategories.includes(c))
+    ];
+
+    // ── Gender order per category: featured genders first (in featured order),
+    //    then remaining genders in manual allSelections order.
+    const orderedGendersByCategory = {};
+    orderedCategories.forEach(cat => {
+      const featuredGenders = featuredGenderLeadByCategory[cat] || [];
+      const manualGenders   = manualGendersByCategory[cat]      || [];
+      orderedGendersByCategory[cat] = [
+        ...featuredGenders,
+        ...manualGenders.filter(g => !featuredGenders.includes(g))
+      ];
     });
 
     // ── Create doc ────────────────────────────────────────────────────────────
@@ -269,33 +283,11 @@ function generateDocument(docTitle, featuredNames, allSelections) {
     let isFirstCategory = true;
 
     orderedCategories.forEach(tabName => {
-      const categorySelections = allSelections.filter(s => s.category === tabName);
-
-      // Group by gender
-      const byGender = {};
-      categorySelections.forEach(s => {
-        const key    = `${tabName}::${s.name}`;
-        const gender = dataMap[key]?.gender || '';
-        if (!byGender[gender]) byGender[gender] = [];
-        byGender[gender].push(s);
-      });
-
-      // Sort each gender group: featured names first (by priority), then
-      // non-featured in original selection order
-      Object.keys(byGender).forEach(gender => {
-        byGender[gender].sort((a, b) => {
-          const aKey  = `${tabName}::${a.name}`;
-          const bKey  = `${tabName}::${b.name}`;
-          const aFeat = featuredKeyOrder[aKey] !== undefined ? featuredKeyOrder[aKey] : Infinity;
-          const bFeat = featuredKeyOrder[bKey] !== undefined ? featuredKeyOrder[bKey] : Infinity;
-          if (aFeat !== bFeat) return aFeat - bFeat;
-          return (selectionIndexMap[aKey] || 0) - (selectionIndexMap[bKey] || 0);
-        });
-      });
+      const genders = orderedGendersByCategory[tabName] || [];
 
       // Skip this category if nobody has a bio
-      const hasAnyone = genderOrder.some(g =>
-        (byGender[g] || []).some(s => dataMap[`${tabName}::${s.name}`]?.bio)
+      const hasAnyone = genders.some(gender =>
+        (selectionsByGroup[`${tabName}::${gender}`] || []).some(s => dataMap[`${tabName}::${s.name}`]?.bio)
       );
       if (!hasAnyone) return;
 
@@ -311,11 +303,24 @@ function generateDocument(docTitle, featuredNames, allSelections) {
       catLabel.editAsText()
         .setFontFamily('Arial').setFontSize(11).setBold(true).setForegroundColor('#1A1A1A');
 
-      // People grouped by gender
+      // Gender groups in manual order
       let isFirstGenderGroup = true;
 
-      genderOrder.forEach(gender => {
-        const people = (byGender[gender] || []).filter(s => dataMap[`${tabName}::${s.name}`]?.bio);
+      genders.forEach(gender => {
+        // Within each group: featured names bubble to top by their featuredNames
+        // index; everyone else retains their manual allSelections order.
+        // JS sort is stable so non-featured relative order is preserved.
+        const people = (selectionsByGroup[`${tabName}::${gender}`] || [])
+          .slice()
+          .sort((a, b) => {
+            const aFeat = featuredKeyOrder[`${tabName}::${a.name}`] !== undefined
+              ? featuredKeyOrder[`${tabName}::${a.name}`] : Infinity;
+            const bFeat = featuredKeyOrder[`${tabName}::${b.name}`] !== undefined
+              ? featuredKeyOrder[`${tabName}::${b.name}`] : Infinity;
+            return aFeat - bFeat;
+          })
+          .filter(s => dataMap[`${tabName}::${s.name}`]?.bio);
+
         if (people.length === 0) return;
 
         // Blank line before second+ gender group within this category
