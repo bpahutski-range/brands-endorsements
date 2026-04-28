@@ -138,12 +138,13 @@ const BRAND_COLOR  = '#003e02';
 //
 // Document order rules:
 //   1. "Featured Talent" section lists featured names (names only, no bios).
-//   2. Categories are ordered: featured name categories first (in order of
-//      first appearance among featuredNames), then remaining TABS order.
-//   3. Within each category, genders are ordered: first featured name's gender
-//      first, then M → F → NB for the remainder (NB always after F).
-//   4. Within each gender group: featured names appear first (by their
-//      featured priority), then non-featured in selection order.
+//   2. Categories: featured name categories first (in featured order),
+//      then remaining categories in manual allSelections order.
+//   3. Genders within each category: featured names' genders first (in the
+//      order they appear among featuredNames), then remaining genders in
+//      manual allSelections order.
+//   4. Within each gender group: featured names bubble to top (by their
+//      featuredNames index); all others retain their manual allSelections order.
 //   5. A blank line separates gender groups within a category.
 //   6. A blank line separates categories.
 // ============================================================

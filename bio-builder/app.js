@@ -456,7 +456,7 @@ function renderTray() {
   selectionCount.textContent = `— ${total} selected`;
   clearAllBtn.style.display = 'block';
 
-  // ── Featured Order section ──────────────────────────────────
+  // ── Featured Order section ────────────────────────────────────
   if (featuredNames.length > 0) {
     const featSection = document.createElement('div');
     featSection.className = 'featured-order-section';
